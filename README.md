@@ -24,9 +24,36 @@ npm install
 
 (Or in your own project, install the dependencies listed in `package.json`)
 
+## Quick Start
+
+### Running the API Server
+
+```bash
+# Start the server
+npm run server
+
+# In another terminal, test with:
+curl http://localhost:3000/health
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello!"}'
+```
+
+### Running Examples
+
+```bash
+# In one terminal, start the server
+npm run server
+
+# In another terminal, run the examples
+npm run examples
+```
+
 ## Usage
 
-### Initialization
+### Option 1: Direct Usage (TypeScript/Node.js)
+
+#### Initialization
 
 ```typescript
 import { MetaAI } from "./src/metaAI";
@@ -93,6 +120,135 @@ const proxy = {
 const ai = new MetaAI({ proxy });
 ```
 
+### Option 2: REST API (Express Server)
+
+A more flexible way to use Meta AI! Start the Express server and interact via HTTP:
+
+#### Starting the Server
+
+```bash
+npm run server
+```
+
+The server will start on `http://localhost:3000`
+
+#### Endpoints
+
+**Health Check**
+
+```bash
+GET http://localhost:3000/health
+```
+
+Response:
+
+```json
+{
+    "status": "ok",
+    "message": "Meta AI API is running"
+}
+```
+
+**Send a Prompt**
+
+```bash
+POST http://localhost:3000/api/prompt
+Content-Type: application/json
+
+{
+  "message": "What is the weather in San Francisco today?",
+  "newConversation": false
+}
+```
+
+Response:
+
+```json
+{
+    "success": true,
+    "data": {
+        "message": "The weather in San Francisco today is mostly clear...",
+        "sources": [
+            {
+                "link": "https://www.wolframalpha.com/...",
+                "title": "WolframAlpha"
+            }
+        ],
+        "media": []
+    }
+}
+```
+
+**Start New Conversation**
+
+```bash
+POST http://localhost:3000/api/new-conversation
+```
+
+Response:
+
+```json
+{
+    "success": true,
+    "message": "Nova conversa iniciada"
+}
+```
+
+**Reset Instance**
+
+```bash
+POST http://localhost:3000/api/reset
+```
+
+Response:
+
+```json
+{
+    "success": true,
+    "message": "Instância resetada com sucesso"
+}
+```
+
+#### Example with cURL
+
+```bash
+# Test health
+curl http://localhost:3000/health
+
+# Send prompt
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is 2 + 2?"}'
+
+# Continue conversation
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What was my previous question?"}'
+
+# Start new conversation
+curl -X POST http://localhost:3000/api/new-conversation
+```
+
+#### Example with JavaScript/Fetch
+
+```javascript
+async function askAI(message) {
+    const response = await fetch("http://localhost:3000/api/prompt", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message }),
+    });
+
+    const data = await response.json();
+    console.log(data.data.message);
+    console.log("Sources:", data.data.sources);
+}
+
+askAI("What is the capital of France?");
+```
+
 ## Educational Purpose
 
 This repository is intended for educational purposes only. Users should adhere to Meta's terms of service.
@@ -102,6 +258,7 @@ This repository is intended for educational purposes only. Users should adhere t
 ISC
 
 ---
+
 <br>
 <br>
 <br>
@@ -132,9 +289,36 @@ npm install
 
 (Ou em seu próprio projeto, instale as dependências listadas em `package.json`)
 
+## Início Rápido
+
+### Executar o Servidor de API
+
+```bash
+# Inicie o servidor
+npm run server
+
+# Em outro terminal, teste com:
+curl http://localhost:3000/health
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Olá!"}'
+```
+
+### Executar Exemplos
+
+```bash
+# Em um terminal, inicie o servidor
+npm run server
+
+# Em outro terminal, execute os exemplos
+npm run examples
+```
+
 ## Uso
 
-### Inicialização
+### Opção 1: Uso Direto (TypeScript/Node.js)
+
+#### Inicialização
 
 ```typescript
 import { MetaAI } from "./src/metaAI";
@@ -179,7 +363,7 @@ Para iniciar uma nova conversa:
 resp = await meta.prompt("Novo tópico", { newConversation: true });
 ```
 
-### Autenticação (Opcional)
+### Autenticação (Opcional) (não testado!)
 
 Para gerar imagens ou evitar alguns limites de taxa, você pode autenticar com Facebook.
 
@@ -199,6 +383,135 @@ const proxy = {
 };
 
 const ai = new MetaAI({ proxy });
+```
+
+### Opção 2: API REST (Servidor Express)
+
+Uma forma mais flexível de usar Meta AI! Inicie o servidor Express e interaja via HTTP:
+
+#### Iniciando o Servidor
+
+```bash
+npm run server
+```
+
+O servidor será iniciado em `http://localhost:3000`
+
+#### Endpoints
+
+**Verificação de Saúde**
+
+```bash
+GET http://localhost:3000/health
+```
+
+Resposta:
+
+```json
+{
+    "status": "ok",
+    "message": "Meta AI API is running"
+}
+```
+
+**Enviar um Prompt**
+
+```bash
+POST http://localhost:3000/api/prompt
+Content-Type: application/json
+
+{
+  "message": "Qual é o clima em São Francisco hoje?",
+  "newConversation": false
+}
+```
+
+Resposta:
+
+```json
+{
+    "success": true,
+    "data": {
+        "message": "O clima em São Francisco hoje é principalmente claro...",
+        "sources": [
+            {
+                "link": "https://www.wolframalpha.com/...",
+                "title": "WolframAlpha"
+            }
+        ],
+        "media": []
+    }
+}
+```
+
+**Iniciar Nova Conversa**
+
+```bash
+POST http://localhost:3000/api/new-conversation
+```
+
+Resposta:
+
+```json
+{
+    "success": true,
+    "message": "Nova conversa iniciada"
+}
+```
+
+**Resetar Instância**
+
+```bash
+POST http://localhost:3000/api/reset
+```
+
+Resposta:
+
+```json
+{
+    "success": true,
+    "message": "Instância resetada com sucesso"
+}
+```
+
+#### Exemplos com cURL
+
+```bash
+# Verificar saúde
+curl http://localhost:3000/health
+
+# Enviar prompt
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Quanto é 2 + 2?"}'
+
+# Continuar conversa
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Qual era minha pergunta anterior?"}'
+
+# Iniciar nova conversa
+curl -X POST http://localhost:3000/api/new-conversation
+```
+
+#### Exemplos com JavaScript/Fetch
+
+```javascript
+async function perguntarIA(mensagem) {
+    const resposta = await fetch("http://localhost:3000/api/prompt", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: mensagem }),
+    });
+
+    const dados = await resposta.json();
+    console.log(dados.data.message);
+    console.log("Fontes:", dados.data.sources);
+}
+
+perguntarIA("Qual é a capital da França?");
 ```
 
 ## Propósito Educacional

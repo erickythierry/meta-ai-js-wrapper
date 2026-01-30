@@ -1,34 +1,44 @@
 {
-  "name": "meta-ai-api",
-  "version": "1.0.0",
-  "description": "Node.js wrapper for Meta AI API",
-  "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "test": "ts-node src/test-manual.ts"
-  },
-  "keywords": [
-    "meta",
-    "ai",
-    "api",
-    "wrapper"
-  ],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.6.0",
-    "axios-cookiejar-support": "^5.0.0",
-    "cheerio": "^1.0.0-rc.12",
-    "tough-cookie": "^4.1.3",
-    "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/tough-cookie": "^4.0.5",
-    "@types/uuid": "^9.0.7",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.0.0"
-  }
+    "name": "meta-ai-api",
+    "version": "1.0.0",
+    "description": "Node.js wrapper for Meta AI API",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "dev": "ts-node src/index.ts",
+        "test": "ts-node src/test-manual.ts",
+        "server": "ts-node src/server.ts",
+        "server:build": "tsc && node dist/server.js",
+        "examples": "ts-node src/api-examples.ts"
+    },
+    "keywords": [
+        "meta",
+        "ai",
+        "api",
+        "wrapper"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@types/express": "^5.0.6",
+        "axios": "^1.6.0",
+        "axios-cookiejar-support": "^5.0.0",
+        "cheerio": "^1.0.0-rc.12",
+        "express": "^4.22.1",
+        "tough-cookie": "^4.1.3",
+        "uuid": "^9.0.1"
+    },
+    "devDependexpress": "^4.17.21",
+    "@types/encies": {
+        "@types/node": "^20.0.0",
+        "@types/tough-cookie": "^4.0.5",
+        "@types/uuid": "^9.0.7",
+        "ts-node": "^10.9.1",
+        "typescript": "^5.0.0"
+    },
+    "devDependencies": {
+        "@types/tough-cookie": "^4.0.5",
+        "@types/uuid": "^10.0.0"
+    }
 }
