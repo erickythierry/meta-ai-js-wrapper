@@ -26,11 +26,17 @@ export class MetaAI {
     this.isAuthed = this.fbPassword !== null && this.fbEmail !== null;
 
     this.jar = new CookieJar();
-    this.session = wrapper(axios.create({ 
+    this.session = wrapper(axios.create({
       jar: this.jar,
       proxy: this.proxy,
       headers: {
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
+        "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "dnt": "1",
       }
     }));
   }
@@ -67,21 +73,21 @@ export class MetaAI {
       const response = await this.session.post(url, payload, { headers });
       const authJson = response.data;
       const accessToken = authJson?.data?.xab_abra_accept_terms_of_service?.new_temp_user_auth?.access_token;
-      
+
       if (!accessToken) throw new Error("Could not retrieve access token");
-      
+
       // Sleep slightly to avoid rate limits
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       return accessToken;
     } catch (error) {
-       throw new Error("Unable to receive a valid response from Meta AI. Check region blocking or network.");
+      throw new Error("Unable to receive a valid response from Meta AI. Check region blocking or network.");
     }
   }
 
   async prompt(
-      message: string, 
-      options: { stream?: boolean, attempts?: number, newConversation?: boolean } = {}
+    message: string,
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; } = {}
   ): Promise<MetaAIResponse> {
     const { stream = false, attempts = 0, newConversation = false } = options;
 
@@ -146,10 +152,10 @@ export class MetaAI {
 
       const response = await this.session.post(url, encodedPayload, { headers });
       const rawResponse = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      
+
       const lastStreamedResponse = this.extractLastResponse(rawResponse);
       if (!lastStreamedResponse) {
-         return this.retry(message, { stream, attempts, newConversation });
+        return this.retry(message, { stream, attempts, newConversation });
       }
 
       return this.extractData(lastStreamedResponse);
@@ -160,140 +166,140 @@ export class MetaAI {
   }
 
   async retry(
-      message: string, 
-      options: { stream?: boolean, attempts?: number, newConversation?: boolean }
+    message: string,
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; }
   ): Promise<MetaAIResponse> {
-      const { attempts = 0 } = options;
-      if (attempts <= MAX_RETRIES) {
-          console.warn(`Retrying Meta AI request... Attempt ${attempts + 1}/${MAX_RETRIES}`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          return this.prompt(message, { ...options, attempts: attempts + 1 });
-      } else {
-          throw new Error("Unable to obtain a valid response from Meta AI.");
-      }
+    const { attempts = 0 } = options;
+    if (attempts <= MAX_RETRIES) {
+      console.warn(`Retrying Meta AI request... Attempt ${attempts + 1}/${MAX_RETRIES}`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      return this.prompt(message, { ...options, attempts: attempts + 1 });
+    } else {
+      throw new Error("Unable to obtain a valid response from Meta AI.");
+    }
   }
 
   private extractLastResponse(response: string): any | null {
-      const lines = response.split('\n');
-      let lastStreamedResponse = null;
-      
-      for (const line of lines) {
-          try {
-              const jsonLine = JSON.parse(line);
-              
-              const botResponseMessage = jsonLine?.data?.node?.bot_response_message;
-              if (botResponseMessage?.id) {
-                  const parts = botResponseMessage.id.split('_');
-                  if (parts.length >= 2) {
-                      this.externalConversationId = parts[0];
-                      this.offlineThreadingId = parts[1];
-                  }
-              }
-              
-              const streamingState = botResponseMessage?.streaming_state;
-              if (streamingState === "OVERALL_DONE") {
-                  lastStreamedResponse = jsonLine;
-              }
-          } catch (e) {
-              continue;
+    const lines = response.split('\n');
+    let lastStreamedResponse = null;
+
+    for (const line of lines) {
+      try {
+        const jsonLine = JSON.parse(line);
+
+        const botResponseMessage = jsonLine?.data?.node?.bot_response_message;
+        if (botResponseMessage?.id) {
+          const parts = botResponseMessage.id.split('_');
+          if (parts.length >= 2) {
+            this.externalConversationId = parts[0];
+            this.offlineThreadingId = parts[1];
           }
+        }
+
+        const streamingState = botResponseMessage?.streaming_state;
+        if (streamingState === "OVERALL_DONE") {
+          lastStreamedResponse = jsonLine;
+        }
+      } catch (e) {
+        continue;
       }
-      return lastStreamedResponse;
+    }
+    return lastStreamedResponse;
   }
 
   private extractData(jsonLine: any): MetaAIResponse {
-      const botResponseMessage = jsonLine?.data?.node?.bot_response_message;
-      const responseText = formatResponse(jsonLine);
-      const fetchId = botResponseMessage?.fetch_id;
-      // Note: fetching sources requires async, but extractData is sync in this design.
-      // Ideally we'd redesign to await sources, but for now we'll return empty sources
-      // or we'd need to make extractData async and await it in prompt/stream.
-      // Given the port, let's keep it simple: if we really need sources, we should refactor to async.
-      // However, the prompt method awaits extractData result if we change it.
-      // Let's defer source fetching to a separate method or make this async.
-      // For this step-by-step port, I will return the data structure and let the user call fetchSources if needed,
-      // or we make prompt handle it.
-      // BUT, looking at python code: `sources = self.fetch_sources(fetch_id) if fetch_id else []`
-      // It calls it synchronously (blocking in python). In node, we must be async.
-      // So prompt needs to await this.
-      
-      const media = this.extractMedia(botResponseMessage);
-      
-      return {
-          message: responseText,
-          sources: [], // Sources need to be fetched asynchronously, see fetchSources method
-          media,
-          // internal use
-          fetchId
-      } as any; 
+    const botResponseMessage = jsonLine?.data?.node?.bot_response_message;
+    const responseText = formatResponse(jsonLine);
+    const fetchId = botResponseMessage?.fetch_id;
+    // Note: fetching sources requires async, but extractData is sync in this design.
+    // Ideally we'd redesign to await sources, but for now we'll return empty sources
+    // or we'd need to make extractData async and await it in prompt/stream.
+    // Given the port, let's keep it simple: if we really need sources, we should refactor to async.
+    // However, the prompt method awaits extractData result if we change it.
+    // Let's defer source fetching to a separate method or make this async.
+    // For this step-by-step port, I will return the data structure and let the user call fetchSources if needed,
+    // or we make prompt handle it.
+    // BUT, looking at python code: `sources = self.fetch_sources(fetch_id) if fetch_id else []`
+    // It calls it synchronously (blocking in python). In node, we must be async.
+    // So prompt needs to await this.
+
+    const media = this.extractMedia(botResponseMessage);
+
+    return {
+      message: responseText,
+      sources: [], // Sources need to be fetched asynchronously, see fetchSources method
+      media,
+      // internal use
+      fetchId
+    } as any;
   }
 
   // Helper to fetch sources if needed, to be called or integrated
   async fetchSources(fetchId: string): Promise<any[]> {
-      const url = "https://graph.meta.ai/graphql?locale=user";
-      const payload = new URLSearchParams({
-          access_token: this.accessToken || "",
-          fb_api_caller_class: "RelayModern",
-          fb_api_req_friendly_name: "AbraSearchPluginDialogQuery",
-          variables: JSON.stringify({ abraMessageFetchID: fetchId }),
-          server_timestamps: "true",
-          doc_id: "6946734308765963"
-      });
+    const url = "https://graph.meta.ai/graphql?locale=user";
+    const payload = new URLSearchParams({
+      access_token: this.accessToken || "",
+      fb_api_caller_class: "RelayModern",
+      fb_api_req_friendly_name: "AbraSearchPluginDialogQuery",
+      variables: JSON.stringify({ abraMessageFetchID: fetchId }),
+      server_timestamps: "true",
+      doc_id: "6946734308765963"
+    });
 
-      const headers = {
-          "authority": "graph.meta.ai",
-          "accept-language": "en-US,en;q=0.9",
-          "content-type": "application/x-www-form-urlencoded",
-          "cookie": `dpr=2; abra_csrf=${this.cookies?.abra_csrf}; datr=${this.cookies?.datr}; ps_n=1; ps_l=1`,
-          "x-fb-friendly-name": "AbraSearchPluginDialogQuery"
-      };
+    const headers = {
+      "authority": "graph.meta.ai",
+      "accept-language": "en-US,en;q=0.9",
+      "content-type": "application/x-www-form-urlencoded",
+      "cookie": `dpr=2; abra_csrf=${this.cookies?.abra_csrf}; datr=${this.cookies?.datr}; ps_n=1; ps_l=1`,
+      "x-fb-friendly-name": "AbraSearchPluginDialogQuery"
+    };
 
-      try {
-          const response = await this.session.post(url, payload, { headers });
-          const jsonResponse = response.data;
-          const searchResults = jsonResponse?.data?.message?.searchResults;
-          
-          if (!searchResults) return [];
-          
-          return searchResults.references || [];
-      } catch (e) {
-          console.error("Error fetching sources:", e);
-          return [];
-      }
+    try {
+      const response = await this.session.post(url, payload, { headers });
+      const jsonResponse = response.data;
+      const searchResults = jsonResponse?.data?.message?.searchResults;
+
+      if (!searchResults) return [];
+
+      return searchResults.references || [];
+    } catch (e) {
+      console.error("Error fetching sources:", e);
+      return [];
+    }
   }
 
   private extractMedia(botResponseMessage: any): any[] {
-      const medias: any[] = [];
-      const imagineCard = botResponseMessage?.imagine_card;
-      const session = imagineCard?.session;
-      const mediaSets = session?.media_sets || [];
+    const medias: any[] = [];
+    const imagineCard = botResponseMessage?.imagine_card;
+    const session = imagineCard?.session;
+    const mediaSets = session?.media_sets || [];
 
-      for (const mediaSet of mediaSets) {
-          const imagineMedia = mediaSet.imagine_media || [];
-          for (const media of imagineMedia) {
-              medias.push({
-                  url: media.uri,
-                  type: media.media_type,
-                  prompt: media.prompt
-              });
-          }
+    for (const mediaSet of mediaSets) {
+      const imagineMedia = mediaSet.imagine_media || [];
+      for (const media of imagineMedia) {
+        medias.push({
+          url: media.uri,
+          type: media.media_type,
+          prompt: media.prompt
+        });
       }
-      return medias;
+    }
+    return medias;
   }
 
   async getCookies(): Promise<Cookies> {
-      if (this.fbEmail && this.fbPassword) {
-          const sessionData = await getFbSession(this.fbEmail, this.fbPassword, this.proxy);
-          return {
-              ...sessionData.cookies,
-              abra_sess: sessionData.abra_sess
-          }
-      }
-      // If not authenticated, get basic cookies
-      const cookies = await getUtilsCookies(this.proxy);
-      
-      // We might need to handle the specific case where headers logic was important in Python
-      // But axios wrapper with jar should handle Set-Cookie
-      return cookies;
+    if (this.fbEmail && this.fbPassword) {
+      const sessionData = await getFbSession(this.fbEmail, this.fbPassword, this.proxy);
+      return {
+        ...sessionData.cookies,
+        abra_sess: sessionData.abra_sess
+      };
+    }
+    // If not authenticated, get basic cookies
+    const cookies = await getUtilsCookies(this.proxy);
+
+    // We might need to handle the specific case where headers logic was important in Python
+    // But axios wrapper with jar should handle Set-Cookie
+    return cookies;
   }
 }

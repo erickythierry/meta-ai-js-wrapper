@@ -21,6 +21,7 @@
     "author": "",
     "license": "ISC",
     "dependencies": {
+        "@mongodb-js/zstd": "^7.0.0",
         "@types/express": "^5.0.6",
         "axios": "^1.6.0",
         "axios-cookiejar-support": "^5.0.0",

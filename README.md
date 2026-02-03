@@ -15,6 +15,8 @@ With this you can easily prompt the AI with a message and get a response, direct
 - **Get Up To Date Information**: Get the latest information from the AI thanks to its connection to the internet.
 - **Get Sources**: Get the sources of the information provided by the AI.
 - **Follow Conversations**: Keep conversation context with `newConversation: false`.
+- **🚀 Cookies Cache System**: Automatic caching of cookies to avoid resolving challenges every time (5x faster!)
+- **🔒 Anti-Bot Bypass**: Automatically handles Meta AI's Client Challenge protection.
 
 ## Installation
 
@@ -249,6 +251,52 @@ async function askAI(message) {
 askAI("What is the capital of France?");
 ```
 
+## 💾 Cookies Cache System
+
+The wrapper now includes an automatic cookies cache system that dramatically improves performance!
+
+### How It Works
+
+**First Request** (~5 seconds):
+- Resolves Meta AI's Client Challenge
+- Fetches fresh cookies
+- **Saves to cache** (`.meta-ai-cookies.json`)
+- Valid for 24 hours
+
+**Subsequent Requests** (<1 second ⚡):
+- Uses cached cookies
+- No challenge resolution needed
+- 5x faster!
+
+### Usage
+
+**Automatic (Default)**:
+```typescript
+const ai = new MetaAI();
+
+// First call: ~5 seconds (saves cache)
+await ai.prompt("Hello!");
+
+// Second call: <1 second (uses cache) ⚡
+await ai.prompt("How are you?");
+```
+
+**Clear Cache Manually**:
+```typescript
+import { clearCookiesCache } from "meta-ai-api";
+
+clearCookiesCache(); // Forces fresh cookies next time
+```
+
+### Cache Details
+
+- **Duration**: 24 hours
+- **File**: `.meta-ai-cookies.json` (already in `.gitignore`)
+- **Auto-validation**: Expired/invalid caches are automatically renewed
+- **Secure**: Cache file is local only (never commit it!)
+
+📖 **[Read Full Cache Documentation](./CACHE.md)**
+
 ## Educational Purpose
 
 This repository is intended for educational purposes only. Users should adhere to Meta's terms of service.
@@ -280,6 +328,8 @@ Com isso você pode facilmente fazer perguntas à IA com uma mensagem e obter um
 - **Obter Informações Atualizadas**: Obtenha as informações mais recentes da IA graças à sua conexão com a internet.
 - **Obter Fontes**: Obtenha as fontes das informações fornecidas pela IA.
 - **Acompanhar Conversas**: Mantenha o contexto da conversa com `newConversation: false`.
+- **🚀 Sistema de Cache de Cookies**: Cache automático de cookies para evitar resolver challenges toda vez (5x mais rápido!)
+- **🔒 Bypass Anti-Bot**: Resolve automaticamente a proteção Client Challenge da Meta AI.
 
 ## Instalação
 
@@ -513,6 +563,52 @@ async function perguntarIA(mensagem) {
 
 perguntarIA("Qual é a capital da França?");
 ```
+
+## 💾 Sistema de Cache de Cookies
+
+O wrapper agora inclui um sistema automático de cache de cookies que melhora drasticamente a performance!
+
+### Como Funciona
+
+**Primeira Requisição** (~5 segundos):
+- Resolve o Client Challenge da Meta AI
+- Busca cookies frescos
+- **Salva no cache** (`.meta-ai-cookies.json`)
+- Válido por 24 horas
+
+**Requisições Seguintes** (<1 segundo ⚡):
+- Usa cookies em cache
+- Não precisa resolver o challenge
+- 5x mais rápido!
+
+### Uso
+
+**Automático (Padrão)**:
+```typescript
+const ai = new MetaAI();
+
+// Primeira chamada: ~5 segundos (salva cache)
+await ai.prompt("Olá!");
+
+// Segunda chamada: <1 segundo (usa cache) ⚡
+await ai.prompt("Como você está?");
+```
+
+**Limpar Cache Manualmente**:
+```typescript
+import { clearCookiesCache } from "meta-ai-api";
+
+clearCookiesCache(); // Força buscar cookies novos na próxima vez
+```
+
+### Detalhes do Cache
+
+- **Duração**: 24 horas
+- **Arquivo**: `.meta-ai-cookies.json` (já está no `.gitignore`)
+- **Auto-validação**: Caches expirados/inválidos são renovados automaticamente
+- **Seguro**: Arquivo de cache é apenas local (nunca faça commit dele!)
+
+📖 **[Leia a Documentação Completa do Cache](./CACHE.md)**
 
 ## Propósito Educacional
 
