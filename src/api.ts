@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { MetaAI } from "./metaAI";
 import { MetaAIResponse } from "./types";
+import { chatPageHtml } from "./chatPage";
 
 const app = express();
 
@@ -36,6 +37,12 @@ async function getMetaAIInstance(): Promise<MetaAI> {
 // Rota de saúde
 app.get("/health", (req: Request, res: Response) => {
     res.json({ status: "ok", message: "Meta AI API is running" });
+});
+
+// Rota do Chat UI
+app.get("/chat", (req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html");
+    res.send(chatPageHtml);
 });
 
 // Rota principal para enviar prompt
