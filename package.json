@@ -10,7 +10,8 @@
         "test": "ts-node src/test-manual.ts",
         "server": "ts-node src/server.ts",
         "server:build": "tsc && node dist/server.js",
-        "examples": "ts-node src/api-examples.ts"
+        "examples": "ts-node src/api-examples.ts",
+        "cli": "ts-node src/cli/index.ts"
     },
     "keywords": [
         "meta",

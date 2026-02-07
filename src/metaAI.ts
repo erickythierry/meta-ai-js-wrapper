@@ -170,7 +170,7 @@ export class MetaAI {
     options: { stream?: boolean, attempts?: number, newConversation?: boolean; }
   ): Promise<MetaAIResponse> {
     const { attempts = 0 } = options;
-    if (attempts <= MAX_RETRIES) {
+    if (attempts < MAX_RETRIES) {
       console.warn(`Retrying Meta AI request... Attempt ${attempts + 1}/${MAX_RETRIES}`);
       await new Promise(resolve => setTimeout(resolve, 3000));
       return this.prompt(message, { ...options, attempts: attempts + 1 });
