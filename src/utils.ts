@@ -76,7 +76,7 @@ function loadCookiesCache(): Cookies | null {
     }
 
     const hoursLeft = Math.round((cache.expiresAt - now) / (60 * 60 * 1000));
-    console.log(`✅ Usando cookies em cache (válidos por mais ${hoursLeft}h)`);
+    // console.log(`✅ Usando cookies em cache (válidos por mais ${hoursLeft}h)`);
     return cookies;
 
   } catch (error) {
