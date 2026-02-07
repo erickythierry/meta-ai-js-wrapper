@@ -4,7 +4,10 @@ import { ActionType, ActionRequest } from "../types/agent.types";
  * Parseia respostas XML do OrchestratorAgent em ActionRequest estruturado.
  *
  * Formatos suportados:
- *   <createFile>[filename=nome.ext][content=conteudo]</createFile>
+ *   <createFile>[name=nome][ext=ext]
+ *   conteudo multiline preservando indentação
+ *   </createFile>
+ *   <createFile>[name=nome][ext=ext][content=conteudo simples]</createFile>  (legado)
  *   <runCommand>[cmd=comando]</runCommand>
  *   <readFile>[path=caminho/do/arquivo]</readFile>
  *   <plan>descricao do plano</plan>
@@ -27,6 +30,39 @@ export class ActionParser {
     }
 
     /**
+     * Parseia uma tag <createFile> suportando três formatos (em ordem de prioridade):
+     * 1. Code block: [name=...][ext=...] seguido por ```lang\n...\n``` (preserva indentação)
+     * 2. Body content: [name=...][ext=...] seguido por texto livre
+     * 3. Legado inline: [name=...][ext=...][content=...] tudo inline
+     */
+    private static parseCreateFile(inner: string): Record<string, string> {
+        const params = this.extractParams(inner);
+
+        // 1. Tenta extrair conteúdo de um code block (```lang\n...\n```)
+        //    Prioridade máxima — code blocks preservam indentação
+        const codeBlockMatch = inner.match(/```\w*\n([\s\S]*?)```/);
+        if (codeBlockMatch) {
+            params.content = codeBlockMatch[1].trimEnd();
+            return params;
+        }
+
+        // 2. Se já encontrou content nos [params], usa o formato legado
+        if (params.content) {
+            return params;
+        }
+
+        // 3. Body content: remove todos os [key=value] e usa o restante como content
+        const body = inner.replace(/\[\w+=[^\]]*\]/g, "");
+        const content = body.replace(/^\n/, "").trimEnd();
+
+        if (content) {
+            params.content = content;
+        }
+
+        return params;
+    }
+
+    /**
      * Parseia a resposta do orchestrator e retorna uma ActionRequest.
      */
     static parse(response: string): ActionRequest {
@@ -39,7 +75,7 @@ export class ActionParser {
         if (createFileMatch) {
             return {
                 type: ActionType.CREATE_FILE,
-                params: this.extractParams(createFileMatch[1]),
+                params: this.parseCreateFile(createFileMatch[1]),
                 raw: createFileMatch[1],
             };
         }

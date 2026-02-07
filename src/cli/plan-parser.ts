@@ -7,52 +7,39 @@ import { Plan, PlanStep, ActionType } from "../types/agent.types";
  * Formato esperado:
  *   PLAN: Descrição do plano
  *   1. <runCommand>[cmd=...]</runCommand>
- *   2. <createFile>[name=...][ext=...][content=...]</createFile>
+ *   2. <createFile>[name=...][ext=...]
+ *   conteudo multiline
+ *   </createFile>
  *   3. <readFile>[path=...]</readFile>
  */
 export class PlanParser {
     /**
      * Parseia a resposta bruta do PlannerAgent e retorna um Plan.
+     * Usa regex para encontrar tags completas (suporta multiline).
      */
     static parse(response: string): Plan {
-        const lines = response.trim().split("\n");
+        const text = response.trim();
 
         // Extrai a descrição (primeira linha que começa com "PLAN:")
         let description = "Plano de execução";
-        const planLine = lines.find((l) => /^PLAN:/i.test(l.trim()));
-        if (planLine) {
-            description = planLine.replace(/^PLAN:\s*/i, "").trim();
+        const planLineMatch = text.match(/^PLAN:\s*(.+)$/mi);
+        if (planLineMatch) {
+            description = planLineMatch[1].trim();
         }
 
-        // Extrai cada passo numerado (linhas que começam com N. ou N-)
+        // Encontra todas as tags de ação completas (podem ser multiline)
+        const tagPattern = /<(createFile|runCommand|readFile)>([\s\S]*?)<\/\1>/gi;
         const steps: PlanStep[] = [];
         let stepIndex = 0;
+        let match: RegExpExecArray | null;
 
-        for (const line of lines) {
-            const trimmed = line.trim();
+        while ((match = tagPattern.exec(text)) !== null) {
+            // Reconstrói a tag completa para o ActionParser
+            const fullTag = match[0];
+            const action = ActionParser.parse(fullTag);
 
-            // Pula a linha PLAN:
-            if (/^PLAN:/i.test(trimmed)) continue;
-
-            // Procura linhas com tags de ação (com ou sem numeração)
-            const hasTag =
-                /<createFile>/i.test(trimmed) ||
-                /<runCommand>/i.test(trimmed) ||
-                /<readFile>/i.test(trimmed);
-
-            if (!hasTag) continue;
-
-            // Remove numeração se existir (ex: "1. ", "2- ", "3) ")
-            const cleanedLine = trimmed.replace(/^\d+[\.\-\)]\s*/, "");
-
-            // Parseia a tag usando o ActionParser existente
-            const action = ActionParser.parse(cleanedLine);
-
-            // Só adiciona se foi parseado corretamente (não é UNKNOWN)
             if (action.type !== ActionType.UNKNOWN) {
                 stepIndex++;
-
-                // Gera uma descrição legível do passo
                 const desc = this.describeAction(action.type, action.params);
 
                 steps.push({

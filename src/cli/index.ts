@@ -104,7 +104,8 @@ async function executeAction(
     action: ActionRequest,
     orchestrator: OrchestratorAgent,
     registry: AgentRegistry,
-    rl: readline.Interface
+    rl: readline.Interface,
+    planner?: PlannerAgent
 ): Promise<{ result: AgentResult; action: ActionRequest } | null> {
     // Encontra o executor adequado
     const executor = registry.resolve(action.type);
@@ -172,6 +173,31 @@ async function executeAction(
         } else {
             log(colors.green, "Sucesso", result.message);
         }
+
+        // Fallback: se o arquivo criado precisa de indentação mas não tem,
+        // tenta regenerar o conteúdo com uma chamada dedicada ao AI
+        if (
+            action.type === ActionType.CREATE_FILE &&
+            result.data?.needsRegeneration &&
+            planner
+        ) {
+            log(colors.yellow, "FileExecutor", "Conteúdo sem indentação detectado. Regenerando...");
+            try {
+                const ext = result.data.ext || action.params.ext || "";
+                const filename = action.params.name || action.params.filename || "arquivo";
+                const originalContent = action.params.content || "";
+
+                const fixedContent = await planner.generateFileContent(filename, ext, originalContent);
+
+                if (fixedContent && fixedContent !== originalContent) {
+                    const fs = await import("fs");
+                    fs.writeFileSync(result.data.filePath, fixedContent, "utf-8");
+                    log(colors.green, "FileExecutor", "Conteúdo corrigido com indentação.");
+                }
+            } catch {
+                log(colors.yellow, "FileExecutor", "Não foi possível corrigir a indentação automaticamente.");
+            }
+        }
     } else {
         log(colors.red, "Erro", result.message);
         if (action.type !== ActionType.RUN_COMMAND && result.data?.stderr) {
@@ -233,6 +259,7 @@ async function handlePlan(
     let successCount = 0;
     let failedCount = 0;
     let skippedCount = 0;
+    const stepResults: { step: PlanStep; result: AgentResult | null }[] = [];
 
     for (const step of plan.steps) {
         console.log(`\n${colors.cyan}${colors.bold}── Passo ${step.index}/${plan.steps.length}: ${step.description} ──${colors.reset}`);
@@ -241,9 +268,11 @@ async function handlePlan(
         let currentAction = step.action;
         let attempts = 0;
         let stepSuccess = false;
+        let lastResult: AgentResult | null = null;
 
         while (attempts <= MAX_PLAN_STEP_RETRIES) {
-            const execResult = await executeAction(currentAction, null as any, registry, rl);
+            const execResult = await executeAction(currentAction, null as any, registry, rl, planner);
+            lastResult = execResult?.result ?? null;
 
             if (execResult && execResult.result.success) {
                 step.status = "success";
@@ -300,6 +329,8 @@ async function handlePlan(
                 log(colors.yellow, "Plano", `Último passo (${step.index}) falhou.`);
             }
         }
+
+        stepResults.push({ step, result: lastResult });
     }
 
     // 5. Resumo final
@@ -310,7 +341,37 @@ async function handlePlan(
         console.log(`  ${colors.yellow}⊘ Pulados:${colors.reset}  ${skippedCount}`);
     }
     console.log(`  ${colors.dim}Total:      ${plan.steps.length}${colors.reset}`);
-    console.log(`${colors.cyan}${colors.bold}╚═════════════════════╝${colors.reset}\n`);
+    console.log(`${colors.cyan}${colors.bold}╚═════════════════════╝${colors.reset}`);
+
+    // 6. Interpretação final da AI
+    try {
+        log(colors.cyan, "AI", "Analisando resultado do plano...");
+
+        const stepsSummary = stepResults
+            .map((sr) => {
+                const status = sr.step.status === "success" ? "OK" : sr.step.status === "failed" ? "FALHOU" : "PULADO";
+                const output = sr.result?.data?.output
+                    ? sr.result.data.output.substring(0, 500)
+                    : sr.result?.message || "(sem saída)";
+                return `Passo ${sr.step.index} (${sr.step.description}): ${status}\nSaída: ${output}`;
+            })
+            .join("\n\n");
+
+        const interpretPrompt = `O plano "${plan.description}" foi executado.
+O usuario pediu: "${userMessage}"
+
+Resultado dos passos:
+${stepsSummary}
+
+Resumo: ${successCount} sucesso, ${failedCount} falhas, ${skippedCount} pulados de ${plan.steps.length} total.
+
+Agora responda ao usuario em linguagem natural e concisa, explicando o que foi feito e o resultado geral. Seja direto e útil. NÃO use tags XML nesta resposta.`;
+
+        const interpretation = await planner.ask(interpretPrompt);
+        console.log(`\n${colors.cyan}${colors.bold}[AI]${colors.reset} ${interpretation}\n`);
+    } catch {
+        // Se falhar a interpretação, não bloqueia — o resumo numérico já foi exibido
+    }
 }
 
 // ─── Loop principal ──────────────────────────────────────────────────────────
@@ -347,7 +408,7 @@ async function handleInput(
     }
 
     // Executa a ação
-    const execResult = await executeAction(action, orchestrator, registry, rl);
+    const execResult = await executeAction(action, orchestrator, registry, rl, planner);
     if (!execResult) return;
 
     // Loop de interpretação + auto-retry
@@ -375,7 +436,7 @@ async function handleInput(
             retries++;
             log(colors.cyan, "Auto-retry", `A AI sugeriu uma nova ação (tentativa ${retries}/${MAX_AUTO_RETRIES})...`);
 
-            const retryResult = await executeAction(followUp, orchestrator, registry, rl);
+            const retryResult = await executeAction(followUp, orchestrator, registry, rl, planner);
             if (!retryResult) break;
 
             currentResult = retryResult.result;

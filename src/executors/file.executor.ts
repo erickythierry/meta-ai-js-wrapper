@@ -4,6 +4,14 @@ import { BaseExecutor } from "./base";
 import { ActionType, ActionRequest, AgentResult } from "../types/agent.types";
 
 /**
+ * Extensões de arquivo que requerem indentação para funcionar corretamente.
+ */
+const INDENT_SENSITIVE_EXTENSIONS = new Set([
+    "yml", "yaml", "py", "pyw", "jade", "pug", "sass", "styl",
+    "haml", "slim", "coffee", "mk", "makefile",
+]);
+
+/**
  * Executor responsável por criar arquivos no sistema de arquivos.
  * Não requer confirmação do usuário.
  */
@@ -20,12 +28,10 @@ export class FileExecutor extends BaseExecutor {
      * Suporta tanto o formato novo [name=hello][ext=py] quanto o legado [filename=hello.py].
      */
     private resolveFilename(params: Record<string, string>): string | null {
-        // Formato novo: name + ext (evita que Meta AI interprete como URL)
         if (params.name) {
             const ext = params.ext ? `.${params.ext}` : "";
             return `${params.name}${ext}`;
         }
-        // Formato legado: filename direto
         return params.filename || null;
     }
 
@@ -40,9 +46,26 @@ export class FileExecutor extends BaseExecutor {
             .replace(/\\\\/g, "\\");
     }
 
+    /**
+     * Verifica se o conteúdo de um arquivo indent-sensitive está sem indentação.
+     * Retorna true se o arquivo PRECISA de indentação mas NÃO tem.
+     */
+    private needsIndentation(content: string, ext: string): boolean {
+        if (!INDENT_SENSITIVE_EXTENSIONS.has(ext.toLowerCase())) {
+            return false;
+        }
+
+        const lines = content.split("\n").filter((l) => l.trim().length > 0);
+        if (lines.length <= 1) return false;
+
+        // Se nenhuma linha (exceto a primeira) começa com espaço/tab, está sem indentação
+        const hasIndentation = lines.slice(1).some((line) => /^[\s\t]+\S/.test(line));
+        return !hasIndentation;
+    }
+
     async execute(action: ActionRequest): Promise<AgentResult> {
         const filename = this.resolveFilename(action.params);
-        const content = action.params.content
+        let content = action.params.content
             ? this.unescapeContent(action.params.content)
             : "";
 
@@ -53,11 +76,13 @@ export class FileExecutor extends BaseExecutor {
             };
         }
 
+        const ext = action.params.ext || filename.split(".").pop() || "";
+        const missingIndent = content && this.needsIndentation(content, ext);
+
         try {
             const filePath = path.resolve(process.cwd(), filename);
             const dir = path.dirname(filePath);
 
-            // Cria diretórios intermediários se necessário
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
@@ -67,7 +92,11 @@ export class FileExecutor extends BaseExecutor {
             return {
                 success: true,
                 message: `Arquivo criado: ${filePath}`,
-                data: { filePath },
+                data: {
+                    filePath,
+                    needsRegeneration: missingIndent,
+                    ext,
+                },
             };
         } catch (error: any) {
             return {
