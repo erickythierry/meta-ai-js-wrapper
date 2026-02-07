@@ -104,10 +104,12 @@ export class CommandExecutor extends BaseExecutor {
 
     private runCommand(cmd: string): Promise<CommandOutput> {
         return new Promise((resolve, reject) => {
-            const proc = spawn("sh", ["-c", cmd], {
+            const proc = spawn("bash", ["-c", cmd], {
                 // stdin herdado do terminal (permite interação com sudo, etc.)
                 // stdout e stderr capturados via pipe para exibir e interpretar
                 stdio: ["inherit", "pipe", "pipe"],
+                // Herda o ambiente completo do usuário (HOME, PATH, etc.)
+                env: process.env,
             });
 
             let stdout = "";

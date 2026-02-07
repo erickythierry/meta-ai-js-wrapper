@@ -29,9 +29,22 @@ export class FileExecutor extends BaseExecutor {
         return params.filename || null;
     }
 
+    /**
+     * Converte escape sequences literais (\n, \t, \\) em caracteres reais.
+     * A AI costuma gerar \n como texto no parâmetro content.
+     */
+    private unescapeContent(raw: string): string {
+        return raw
+            .replace(/\\n/g, "\n")
+            .replace(/\\t/g, "\t")
+            .replace(/\\\\/g, "\\");
+    }
+
     async execute(action: ActionRequest): Promise<AgentResult> {
         const filename = this.resolveFilename(action.params);
-        const content = action.params.content;
+        const content = action.params.content
+            ? this.unescapeContent(action.params.content)
+            : "";
 
         if (!filename) {
             return {
@@ -49,7 +62,7 @@ export class FileExecutor extends BaseExecutor {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
-            fs.writeFileSync(filePath, content ?? "", "utf-8");
+            fs.writeFileSync(filePath, content, "utf-8");
 
             return {
                 success: true,

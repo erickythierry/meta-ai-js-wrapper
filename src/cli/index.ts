@@ -1,11 +1,12 @@
 import * as readline from "readline";
 import { OrchestratorAgent } from "../agents/orchestrator";
+import { PlannerAgent } from "../agents/planner";
 import { AgentRegistry } from "../agents/registry";
 import { ActionParser } from "./parser";
 import { FileExecutor } from "../executors/file.executor";
 import { FileReadExecutor } from "../executors/file-read.executor";
 import { CommandExecutor } from "../executors/command.executor";
-import { ActionType, ActionRequest, AgentResult } from "../types/agent.types";
+import { ActionType, ActionRequest, AgentResult, Plan, PlanStep } from "../types/agent.types";
 import { BaseExecutor } from "../executors/base";
 
 // ─── Estado global do CLI ────────────────────────────────────────────────────
@@ -181,11 +182,143 @@ async function executeAction(
     return { result, action };
 }
 
+// ─── Limite de retries por passo do plano ────────────────────────────────────
+const MAX_PLAN_STEP_RETRIES = 2;
+
+// ─── Execução de um plano multi-step ────────────────────────────────────────
+
+async function handlePlan(
+    userMessage: string,
+    planDescription: string,
+    planner: PlannerAgent,
+    registry: AgentRegistry,
+    rl: readline.Interface
+): Promise<void> {
+    // 1. Gera o plano
+    log(colors.cyan, "Planner", "Gerando plano de execução...");
+
+    let plan: Plan;
+    try {
+        plan = await planner.createPlan(userMessage);
+    } catch (error: any) {
+        log(colors.red, "Erro", `Falha ao gerar plano: ${error.message}`);
+        return;
+    }
+
+    if (plan.steps.length === 0) {
+        log(colors.yellow, "Planner", "O plano gerado não contém passos válidos.");
+        return;
+    }
+
+    // 2. Exibe o plano
+    console.log(`\n${colors.cyan}${colors.bold}╔══ Plano: ${plan.description} ══╗${colors.reset}\n`);
+    for (const step of plan.steps) {
+        const typeColor = step.action.type === ActionType.RUN_COMMAND ? colors.yellow : colors.green;
+        console.log(`  ${colors.bold}${step.index}.${colors.reset} ${step.description}`);
+        console.log(`     ${typeColor}${colors.dim}${step.action.type}${colors.reset} ${colors.dim}→ ${step.action.raw.substring(0, 80)}${step.action.raw.length > 80 ? "..." : ""}${colors.reset}`);
+    }
+    console.log();
+
+    // 3. Pede confirmação
+    const confirmed = await askConfirmation(
+        rl,
+        `Executar plano com ${plan.steps.length} passos?`
+    );
+    if (!confirmed) {
+        log(colors.yellow, "Cancelado", "Plano cancelado pelo usuário.");
+        return;
+    }
+
+    // 4. Executa cada passo
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    for (const step of plan.steps) {
+        console.log(`\n${colors.cyan}${colors.bold}── Passo ${step.index}/${plan.steps.length}: ${step.description} ──${colors.reset}`);
+        step.status = "running";
+
+        let currentAction = step.action;
+        let attempts = 0;
+        let stepSuccess = false;
+
+        while (attempts <= MAX_PLAN_STEP_RETRIES) {
+            const execResult = await executeAction(currentAction, null as any, registry, rl);
+
+            if (execResult && execResult.result.success) {
+                step.status = "success";
+                stepSuccess = true;
+                successCount++;
+                break;
+            }
+
+            // Falhou
+            attempts++;
+            if (attempts > MAX_PLAN_STEP_RETRIES) break;
+
+            // Tenta retry via AI
+            log(colors.yellow, "Retry", `Passo falhou. Pedindo alternativa à AI (tentativa ${attempts}/${MAX_PLAN_STEP_RETRIES})...`);
+
+            try {
+                const errorMsg = execResult?.result.message || "Ação não executada";
+                const retryAction = await planner.retryStep(step, errorMsg);
+
+                if (retryAction.type === ActionType.UNKNOWN) {
+                    log(colors.yellow, "Retry", "A AI não sugeriu uma alternativa válida.");
+                    break;
+                }
+
+                currentAction = retryAction;
+            } catch (retryError: any) {
+                log(colors.red, "Retry", `Falha ao obter alternativa: ${retryError.message}`);
+                break;
+            }
+        }
+
+        if (!stepSuccess) {
+            step.status = "failed";
+            failedCount++;
+
+            // Verifica se existem passos restantes
+            const remainingSteps = plan.steps.filter((s) => s.status === "pending");
+
+            if (remainingSteps.length > 0) {
+                // Pergunta se quer pular ou abortar (só se há próximos passos)
+                const skipOrAbort = await askConfirmation(
+                    rl,
+                    `Passo ${step.index} falhou. Continuar com os ${remainingSteps.length} passos restantes? (n = abortar plano)`
+                );
+                if (!skipOrAbort) {
+                    for (const remaining of remainingSteps) {
+                        remaining.status = "skipped";
+                        skippedCount++;
+                    }
+                    log(colors.yellow, "Plano", "Plano abortado pelo usuário.");
+                    break;
+                }
+            } else {
+                log(colors.yellow, "Plano", `Último passo (${step.index}) falhou.`);
+            }
+        }
+    }
+
+    // 5. Resumo final
+    console.log(`\n${colors.cyan}${colors.bold}╔══ Resumo do Plano ══╗${colors.reset}`);
+    console.log(`  ${colors.green}✓ Sucesso:${colors.reset}  ${successCount}`);
+    console.log(`  ${colors.red}✗ Falhou:${colors.reset}   ${failedCount}`);
+    if (skippedCount > 0) {
+        console.log(`  ${colors.yellow}⊘ Pulados:${colors.reset}  ${skippedCount}`);
+    }
+    console.log(`  ${colors.dim}Total:      ${plan.steps.length}${colors.reset}`);
+    console.log(`${colors.cyan}${colors.bold}╚═════════════════════╝${colors.reset}\n`);
+}
+
 // ─── Loop principal ──────────────────────────────────────────────────────────
 
 async function handleInput(
     input: string,
     orchestrator: OrchestratorAgent,
+    planner: PlannerAgent,
     registry: AgentRegistry,
     rl: readline.Interface
 ): Promise<void> {
@@ -204,6 +337,12 @@ async function handleInput(
     if (action.type === ActionType.UNKNOWN) {
         log(colors.yellow, "Info", `Solicitação não reconhecida: ${action.raw}`);
         log(colors.dim, "Dica", "Tente pedir para criar um arquivo ou executar um comando.");
+        return;
+    }
+
+    // Se for um plano, delega para handlePlan
+    if (action.type === ActionType.PLAN) {
+        await handlePlan(input, action.params.description || action.raw, planner, registry, rl);
         return;
     }
 
@@ -258,6 +397,7 @@ async function main() {
     printBanner();
 
     const orchestrator = new OrchestratorAgent();
+    const planner = new PlannerAgent();
     const registry = createRegistry();
 
     const rl = readline.createInterface({
@@ -306,13 +446,14 @@ async function main() {
 
                 case "/new":
                     orchestrator.resetConversation();
+                    planner.resetConversation();
                     log(colors.cyan, "CLI", "Conversa resetada. Próxima mensagem inicia um novo contexto.");
                     prompt();
                     return;
             }
 
             try {
-                await handleInput(trimmed, orchestrator, registry, rl);
+                await handleInput(trimmed, orchestrator, planner, registry, rl);
             } catch (error: any) {
                 log(colors.red, "Erro", `Erro inesperado: ${error.message}`);
             }

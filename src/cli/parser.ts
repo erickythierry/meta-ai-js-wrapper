@@ -7,6 +7,7 @@ import { ActionType, ActionRequest } from "../types/agent.types";
  *   <createFile>[filename=nome.ext][content=conteudo]</createFile>
  *   <runCommand>[cmd=comando]</runCommand>
  *   <readFile>[path=caminho/do/arquivo]</readFile>
+ *   <plan>descricao do plano</plan>
  *   <unknown>descricao</unknown>
  */
 export class ActionParser {
@@ -64,6 +65,18 @@ export class ActionParser {
                 type: ActionType.READ_FILE,
                 params: this.extractParams(readFileMatch[1]),
                 raw: readFileMatch[1],
+            };
+        }
+
+        // Tenta parsear <plan>...</plan>
+        const planMatch = trimmed.match(
+            /<plan>([\s\S]*?)<\/plan>/i
+        );
+        if (planMatch) {
+            return {
+                type: ActionType.PLAN,
+                params: { description: planMatch[1].trim() },
+                raw: planMatch[1],
             };
         }
 
