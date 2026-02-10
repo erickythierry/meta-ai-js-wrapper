@@ -18,6 +18,7 @@ export class MetaAI {
   public externalConversationId: string | null = null;
   public offlineThreadingId: string | null = null;
   private jar: CookieJar;
+  private currentMode: string | null = null;
 
   constructor(args?: MetaAIConstructorArgs) {
     this.fbEmail = args?.fbEmail ?? null;
@@ -85,11 +86,69 @@ export class MetaAI {
     }
   }
 
+  /** Indica se a conversa já foi estabelecida no servidor (primeira mensagem enviada) */
+  private conversationEstablished: boolean = false;
+  /** Modo pendente para aplicar após a conversa ser estabelecida */
+  private pendingMode: "think_hard" | "think_fast" | null = null;
+
+  /**
+   * Define o modo da conversa (ex: "think_hard" para Deep Think).
+   * Envia uma mutation GraphQL separada para configurar o modo.
+   * A conversa precisa existir no servidor (primeira mensagem já enviada).
+   */
+  async setConversationMode(mode: "think_hard" | "think_fast"): Promise<boolean> {
+    if (!this.externalConversationId) return false;
+    if (this.currentMode === mode) return true;
+
+    if (!this.cookies) await this.init();
+
+    let authPayload: any = {};
+    let url = "";
+
+    if (!this.isAuthed) {
+      if (!this.accessToken) this.accessToken = await this.getAccessToken();
+      authPayload = { access_token: this.accessToken };
+      url = "https://graph.meta.ai/graphql?locale=user";
+    } else {
+      authPayload = { fb_dtsg: this.cookies!.fb_dtsg };
+      url = "https://www.meta.ai/api/graphql/";
+    }
+
+    const payload = new URLSearchParams({
+      ...authPayload,
+      fb_api_caller_class: "RelayModern",
+      doc_id: "252fabd544d62ab49bd24035e4073fdf",
+      variables: JSON.stringify({
+        input: {
+          conversationId: this.externalConversationId,
+          mode,
+        },
+      }),
+      server_timestamps: "true",
+    });
+
+    const headers: any = {
+      "content-type": "application/x-www-form-urlencoded",
+    };
+
+    if (this.isAuthed) {
+      headers["cookie"] = `abra_sess=${this.cookies!.abra_sess}`;
+    }
+
+    try {
+      await this.session.post(url, payload, { headers });
+      this.currentMode = mode;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async prompt(
     message: string,
-    options: { stream?: boolean, attempts?: number, newConversation?: boolean; } = {}
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; } = {}
   ): Promise<MetaAIResponse> {
-    const { stream = false, attempts = 0, newConversation = false } = options;
+    const { stream = false, attempts = 0, newConversation = false, thinking = false } = options;
 
     if (!this.cookies) await this.init();
 
@@ -107,6 +166,17 @@ export class MetaAI {
 
     if (!this.externalConversationId || newConversation) {
       this.externalConversationId = uuidv4();
+      this.currentMode = null;
+      this.conversationEstablished = false;
+    }
+
+    // Se a conversa já existe no servidor, seta o modo antes de enviar
+    const desiredMode = thinking ? "think_hard" : "think_fast";
+    if (this.conversationEstablished && this.currentMode !== desiredMode) {
+      await this.setConversationMode(desiredMode);
+    } else if (!this.conversationEstablished && thinking) {
+      // Conversa nova + thinking: marca como pendente para aplicar após a 1ª mensagem
+      this.pendingMode = desiredMode;
     }
 
     const payload = {
@@ -155,19 +225,33 @@ export class MetaAI {
 
       const lastStreamedResponse = this.extractLastResponse(rawResponse);
       if (!lastStreamedResponse) {
-        return this.retry(message, { stream, attempts, newConversation });
+        return this.retry(message, { stream, attempts, newConversation, thinking });
+      }
+
+      // Marca a conversa como estabelecida no servidor
+      this.conversationEstablished = true;
+
+      // Se tem modo pendente (thinking na 1ª mensagem), aplica e reenvia
+      if (this.pendingMode) {
+        const mode = this.pendingMode;
+        this.pendingMode = null;
+        const modeSet = await this.setConversationMode(mode);
+        if (modeSet) {
+          // Reenvia a mesma mensagem agora com o modo ativo
+          return this.prompt(message, { stream, attempts: 0, newConversation: false, thinking });
+        }
       }
 
       return this.extractData(lastStreamedResponse);
 
     } catch (e) {
-      return this.retry(message, { stream, attempts, newConversation });
+      return this.retry(message, { stream, attempts, newConversation, thinking });
     }
   }
 
   async retry(
     message: string,
-    options: { stream?: boolean, attempts?: number, newConversation?: boolean; }
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; }
   ): Promise<MetaAIResponse> {
     const { attempts = 0 } = options;
     if (attempts < MAX_RETRIES) {
