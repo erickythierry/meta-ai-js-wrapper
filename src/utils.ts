@@ -144,6 +144,129 @@ async function requestWithDecompress(url: string, options: any = {}) {
   return response;
 }
 
+/**
+ * Tenta extrair cookies do HTML usando múltiplos padrões (a Meta muda com frequência)
+ */
+function extractCookiesFromHtml(html: string): Cookies {
+  // Padrão 1: formato JSON {"value":"..."}
+  let _js_datr = extractValue(html, '_js_datr":{"value":"', '",');
+  let abra_csrf = extractValue(html, 'abra_csrf":{"value":"', '",');
+  let datr = extractValue(html, 'datr":{"value":"', '",');
+  let lsd = extractValue(html, '"LSD",[],{"token":"', '"}');
+  let fb_dtsg = extractValue(html, 'DTSGInitData",[],{"token":"', '"');
+
+  // Padrão 2: formato simples "key","value"
+  if (!_js_datr) _js_datr = extractValue(html, '"_js_datr","', '"');
+  if (!abra_csrf) abra_csrf = extractValue(html, '"abra_csrf","', '"');
+  if (!datr) datr = extractValue(html, '"datr","', '"');
+  if (!lsd) lsd = extractValue(html, '"LSD","', '"');
+  if (!fb_dtsg) fb_dtsg = extractValue(html, '"DTSGInitialData","', '"');
+
+  // Padrão 3: formato com require("DTSGInitData") ou define
+  if (!lsd) lsd = extractValue(html, '"token":"', '"');
+  if (!fb_dtsg) fb_dtsg = extractValue(html, '"DTSGInitData",{"token":"', '"');
+
+  // Padrão 4: regex mais flexível
+  if (!_js_datr) {
+    const m = html.match(/_js_datr['"]\s*[:=,]\s*[{]?\s*["']?(?:value["']?\s*[:=]\s*)?["']([^"']+)["']/);
+    if (m) _js_datr = m[1];
+  }
+  if (!abra_csrf) {
+    const m = html.match(/abra_csrf['"]\s*[:=,]\s*[{]?\s*["']?(?:value["']?\s*[:=]\s*)?["']([^"']+)["']/);
+    if (m) abra_csrf = m[1];
+  }
+  if (!datr) {
+    const m = html.match(/["']datr["']\s*[:=,]\s*[{]?\s*["']?(?:value["']?\s*[:=]\s*)?["']([^"']+)["']/);
+    if (m) datr = m[1];
+  }
+  if (!lsd) {
+    const m = html.match(/["']LSD["'][^}]*["']token["']\s*:\s*["']([^"']+)["']/);
+    if (m) lsd = m[1];
+  }
+
+  console.log('🔍 Cookies extraídos do HTML:', {
+    _js_datr: _js_datr ? `${_js_datr.substring(0, 10)}...` : '(vazio)',
+    abra_csrf: abra_csrf ? `${abra_csrf.substring(0, 10)}...` : '(vazio)',
+    datr: datr ? `${datr.substring(0, 10)}...` : '(vazio)',
+    lsd: lsd ? `${lsd.substring(0, 10)}...` : '(vazio)',
+    fb_dtsg: fb_dtsg ? `${fb_dtsg.substring(0, 10)}...` : '(vazio)',
+  });
+
+  return { _js_datr, abra_csrf, datr, lsd, fb_dtsg };
+}
+
+/**
+ * Fallback: tenta extrair cookies do cookie jar (Set-Cookie headers)
+ */
+async function extractCookiesFromJar(cookieJar: CookieJar, html: string, partial: Cookies): Promise<Cookies> {
+  try {
+    const jarCookies = await cookieJar.getCookies('https://www.meta.ai');
+    const cookieMap: Record<string, string> = {};
+    jarCookies.forEach((c: any) => { cookieMap[c.key] = c.value; });
+
+    console.log('🍪 Cookies no jar:', Object.keys(cookieMap));
+
+    return {
+      _js_datr: partial._js_datr || cookieMap['_js_datr'] || cookieMap['datr'] || '',
+      abra_csrf: partial.abra_csrf || cookieMap['abra_csrf'] || '',
+      datr: partial.datr || cookieMap['datr'] || '',
+      lsd: partial.lsd || extractLsdFromHtml(html) || '',
+      fb_dtsg: partial.fb_dtsg || '',
+    };
+  } catch (e) {
+    console.error('❌ Erro ao extrair cookies do jar:', e);
+    return partial;
+  }
+}
+
+/**
+ * Tenta encontrar o LSD token com regex mais agressivo
+ */
+function extractLsdFromHtml(html: string): string {
+  // Tenta vários padrões para LSD
+  const patterns = [
+    /"LSD"[^"]*"token"\s*:\s*"([^"]+)"/,
+    /\["LSD",[^"]*"([^"]+)"\]/,
+    /name="lsd"\s+value="([^"]+)"/,
+    /"lsd":\s*"([^"]+)"/,
+    /lsd['"]\s*[:=]\s*['"]([^'"]+)['"]/,
+  ];
+  for (const pattern of patterns) {
+    const m = html.match(pattern);
+    if (m && m[1]) return m[1];
+  }
+  return '';
+}
+
+/**
+ * Debug: salva trechos do HTML para diagnóstico
+ */
+function debugExtraction(html: string, label: string): void {
+  const debugFile = path.join(process.cwd(), `.meta-ai-debug-${label}.html`);
+  try {
+    // Salva apenas os primeiros 50KB para diagnóstico
+    fs.writeFileSync(debugFile, html.substring(0, 50000), 'utf-8');
+    console.log(`🐛 HTML de debug salvo em: ${debugFile}`);
+
+    // Procura por padrões conhecidos no HTML
+    const hasJsDatr = html.includes('_js_datr');
+    const hasAbraCsrf = html.includes('abra_csrf');
+    const hasDatr = html.includes('"datr"');
+    const hasLsd = html.includes('LSD');
+    const hasDtsg = html.includes('DTSGInitData');
+
+    console.log('🔎 Padrões encontrados no HTML:', {
+      _js_datr: hasJsDatr,
+      abra_csrf: hasAbraCsrf,
+      datr: hasDatr,
+      LSD: hasLsd,
+      DTSGInitData: hasDtsg,
+    });
+  } catch (e) {
+    console.warn('⚠️  Não foi possível salvar debug HTML:', e);
+  }
+}
+
 export function generateOfflineThreadingId(): string {
   const maxInt = BigInt('18446744073709551615'); // 2^64 - 1
   const mask22Bits = BigInt((1 << 22) - 1);
@@ -305,44 +428,38 @@ export async function getCookies(proxy?: any, forceRefresh: boolean = false): Pr
 
             const finalText = finalResponse.data;
             console.log('✅ Acesso obtido após segundo challenge!');
+            debugExtraction(finalText, 'after-second-challenge');
 
-            return {
-              _js_datr: extractValue(finalText, '_js_datr":{"value":"', '",'),
-              abra_csrf: extractValue(finalText, 'abra_csrf":{"value":"', '",'),
-              datr: extractValue(finalText, 'datr":{"value":"', '",'),
-              lsd: extractValue(finalText, '"LSD",[],{"token":"', '"}'),
-              fb_dtsg: extractValue(finalText, 'DTSGInitData",[],{"token":"', '"'),
-            };
+            let finalCookies = extractCookiesFromHtml(finalText);
+            if (!finalCookies._js_datr && !finalCookies.lsd) {
+              finalCookies = await extractCookiesFromJar(jar, finalText, finalCookies);
+            }
+            if (finalCookies.lsd) saveCookiesCache(finalCookies);
+            return finalCookies;
           }
         }
 
         const retryText = retryResponse.data;
         console.log('✅ Acesso obtido após challenge!');
+        console.log(`📏 Tamanho da resposta: ${retryText.length} chars`);
+
+        // Debug: salvar trecho do HTML para diagnóstico
+        debugExtraction(retryText, 'after-challenge');
 
         // Tentar diferentes padrões de extração
-        let cookies = {
-          _js_datr: extractValue(retryText, '_js_datr":{"value":"', '",'),
-          abra_csrf: extractValue(retryText, 'abra_csrf":{"value":"', '",'),
-          datr: extractValue(retryText, 'datr":{"value":"', '",'),
-          lsd: extractValue(retryText, '"LSD",[],{"token":"', '"}'),
-          fb_dtsg: extractValue(retryText, 'DTSGInitData",[],{"token":"', '"'),
-        };
+        let cookies = extractCookiesFromHtml(retryText);
 
-        // Se não encontrou, tentar padrões alternativos
-        if (!cookies._js_datr) {
-          cookies._js_datr = extractValue(retryText, '"_js_datr","', '"');
+        // Se os cookies do HTML estão vazios, tentar extrair do cookie jar
+        if (!cookies._js_datr && !cookies.abra_csrf && !cookies.lsd) {
+          console.log('⚠️  Extração do HTML falhou, tentando extrair do cookie jar...');
+          cookies = await extractCookiesFromJar(jar, retryText, cookies);
         }
-        if (!cookies.abra_csrf) {
-          cookies.abra_csrf = extractValue(retryText, '"abra_csrf","', '"');
-        }
-        if (!cookies.datr) {
-          cookies.datr = extractValue(retryText, '"datr","', '"');
-        }
+
+        // Validação antes de salvar
         if (!cookies.lsd) {
-          cookies.lsd = extractValue(retryText, '"LSD","', '"');
-        }
-        if (!cookies.fb_dtsg) {
-          cookies.fb_dtsg = extractValue(retryText, '"DTSGInitialData","', '"');
+          console.error('❌ Cookie "lsd" não encontrado - cookies inválidos, não salvando cache');
+          console.error('   Cookies extraídos:', JSON.stringify(cookies));
+          throw new Error('Não foi possível extrair cookies válidos da Meta AI após challenge');
         }
 
         // Salva os cookies no cache
@@ -354,16 +471,18 @@ export async function getCookies(proxy?: any, forceRefresh: boolean = false): Pr
       throw new Error('Não foi possível resolver o Client Challenge da Meta AI');
     }
 
-    const cookies = {
-      _js_datr: extractValue(text, '_js_datr":{"value":"', '",'),
-      abra_csrf: extractValue(text, 'abra_csrf":{"value":"', '",'),
-      datr: extractValue(text, 'datr":{"value":"', '",'),
-      lsd: extractValue(text, '"LSD",[],{"token":"', '"}'),
-      fb_dtsg: extractValue(text, 'DTSGInitData",[],{"token":"', '"'),
-    };
+    debugExtraction(text, 'no-challenge');
 
-    // Salva os cookies no cache
-    saveCookiesCache(cookies);
+    let cookies = extractCookiesFromHtml(text);
+    if (!cookies._js_datr && !cookies.lsd) {
+      cookies = await extractCookiesFromJar(jar, text, cookies);
+    }
+
+    if (cookies.lsd) {
+      saveCookiesCache(cookies);
+    } else {
+      console.error('❌ Cookies inválidos (lsd vazio), não salvando cache');
+    }
 
     return cookies;
   } catch (error: any) {
@@ -453,7 +572,7 @@ export async function getFbSession(email: string, password: string, proxy?: any)
   const authUrl = "https://www.meta.ai/state/";
   const authPayload = new URLSearchParams();
   authPayload.append('__a', '1');
-  authPayload.append('lsd', metaAiCookies.lsd);
+  authPayload.append('lsd', metaAiCookies.lsd || '');
 
   const authHeaders: any = {
     "authority": "www.meta.ai",

@@ -21,10 +21,12 @@ export interface MetaAIResponse {
 }
 
 export interface Cookies {
-    _js_datr: string;
-    abra_csrf?: string;
     datr: string;
-    lsd: string;
+    rd_challenge?: string;
+    // Campos legados (mantidos para compatibilidade, mas não usados no novo fluxo)
+    _js_datr?: string;
+    abra_csrf?: string;
+    lsd?: string;
     fb_dtsg?: string;
     abra_sess?: string;
     [key: string]: string | undefined;
