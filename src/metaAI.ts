@@ -233,6 +233,7 @@ function buildDgwMessageFrame(requestId: string, protobufPayload: Buffer): Buffe
 
   // Header: [0x0d, 0x00, 0x00, len_lo, len_hi, 0x00, 0x00, 0x80]
   // Length field = body.length + 2 (includes 2 bytes overhead)
+
   const len = body.length + 2;
   const headerBytes = [0x0d, 0x00, 0x00, len & 0xff, (len >> 8) & 0xff, 0x00, 0x00, 0x80];
   return Buffer.concat([Buffer.from(headerBytes), body]);
@@ -432,6 +433,8 @@ export class MetaAI {
 
     try {
       const response = await this.sendViaWebSocket(conversationId, requestId, offlineThreadingId, message);
+
+
       this.conversationEstablished = true;
       return {
           ...response,
@@ -494,6 +497,9 @@ export class MetaAI {
         }
       }, 30000);
 
+      let latestText = '';
+      let latestCode = '';
+
       ws.on('open', () => {
         // Enviar setup frame
         const setupFrame = buildDgwSetupFrame(conversationId);
@@ -530,38 +536,53 @@ export class MetaAI {
 
         // Extrair texto de resposta dos frames binários
         try {
-          // Estratégia: encontrar o JSON completo da response que contém "sections"
-          // O formato é: {"response_id":"...","sections":[{"view_model":{"__typename":"GenAISingleLayoutViewModel","primitive":{"__typename":"GenAIMarkdownTextUXPrimitive","text":"..."}}}],...}
-          // Precisamos do texto na PRIMEIRA section, não do embedded_screens (que contém thinking)
+          // 1. Tentar encontrar GenAIMarkdownTextUXPrimitive
+          const textMarker = '"GenAIMarkdownTextUXPrimitive","text":"';
+          let textIdx = str.indexOf(textMarker);
 
-          // Procurar o padrão: "GenAIMarkdownTextUXPrimitive","text":"..."
-          // Que aparece ANTES de "embedded_screens"
-          const marker = '"GenAIMarkdownTextUXPrimitive","text":"';
-          const markerIdx = str.indexOf(marker);
-          if (markerIdx !== -1) {
-            const textStart = markerIdx + marker.length;
-            // Encontrar o fim da string (aspas não escapadas)
+          // 2. Tentar encontrar GenAICodeUXPrimitive (para blocos de código/JSON)
+          const codeMarker = '"GenAICodeUXPrimitive"';
+          let codeIdx = str.indexOf(codeMarker);
+
+          if (textIdx !== -1) {
+            const textStart = textIdx + textMarker.length;
             let textEnd = textStart;
             while (textEnd < str.length) {
               if (str[textEnd] === '"' && str[textEnd - 1] !== '\\') break;
               textEnd++;
             }
             const extractedText = str.substring(textStart, textEnd);
-
-            // Verificar se é a resposta principal (não thinking)
-            // O texto de thinking começa com "•" ou "**" e está dentro de embedded_screens
+            
+            // Priorizar resposta principal (antes de embedded_screens)
             const embeddedIdx = str.indexOf('"embedded_screens"');
-            if (embeddedIdx === -1 || markerIdx < embeddedIdx) {
-              // O texto está ANTES de embedded_screens → é a resposta principal
-              const decoded = extractedText
-                .replace(/\\n/g, '\n')
-                .replace(/\\"/g, '"')
-                .replace(/\\t/g, '\t')
-                .replace(/\\\\/g, '\\')
-                .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-              fullResponseText = decoded;
+            if (embeddedIdx === -1 || textIdx < embeddedIdx) {
+               latestText = this.decodeString(extractedText);
             }
+          } 
+          
+          if (codeIdx !== -1) {
+              // Se achou bloco de código, tenta extrair o conteúdo
+              // Padrão: ... "code_blocks":[{"content":"O CONTEUDO" ...
+              const contentMarker = '"content":"';
+              const contentIdx = str.indexOf(contentMarker, codeIdx);
+              
+              if (contentIdx !== -1) {
+                  const contentStart = contentIdx + contentMarker.length;
+                  let contentEnd = contentStart;
+                  while (contentEnd < str.length) {
+                      if (str[contentEnd] === '"' && str[contentEnd - 1] !== '\\') break;
+                      contentEnd++;
+                  }
+                  const extractedContent = str.substring(contentStart, contentEnd);
+                  
+                  const embeddedIdx = str.indexOf('"embedded_screens"');
+                  if (embeddedIdx === -1 || codeIdx < embeddedIdx) {
+                      latestCode = this.decodeString(extractedContent);
+                  }
+              }
           }
+
+          fullResponseText = [latestText, latestCode].filter(Boolean).join("\n\n");
 
           // Detectar fim: byte pattern 0x28 0x01 indica resposta finalizada
           if (fullResponseText && buf.includes(Buffer.from([0x28, 0x01]))) {
@@ -582,6 +603,7 @@ export class MetaAI {
         reject(err);
       });
 
+
       ws.on('close', () => {
         clearTimeout(timeout);
         if (fullResponseText) {
@@ -597,10 +619,20 @@ export class MetaAI {
     });
   }
 
+  private decodeString(str: string): string {
+    return str
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  }
+
   async retry(
     message: string,
     options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; conversationId?: string; }
   ): Promise<MetaAIResponse> {
+
     const { attempts = 0 } = options;
     if (attempts < MAX_RETRIES) {
       console.warn(`Retrying... Attempt ${attempts + 1}/${MAX_RETRIES}`);
