@@ -409,27 +409,34 @@ export class MetaAI {
    */
   async prompt(
     message: string,
-    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; } = {}
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; conversationId?: string; } = {}
   ): Promise<MetaAIResponse> {
-    const { attempts = 0, newConversation = false } = options;
+    const { attempts = 0, newConversation = false, conversationId: optionsConversationId } = options;
 
     if (!this.cookies) await this.init();
     if (!this.accessToken) this.accessToken = await this.getAccessToken();
 
-    if (!this.externalConversationId || newConversation) {
-      this.externalConversationId = uuidv4();
-      this.currentMode = null;
-      this.conversationEstablished = false;
+    if (newConversation) {
+        this.externalConversationId = uuidv4();
+        this.currentMode = null;
+        this.conversationEstablished = false;
+    } else if (optionsConversationId) {
+        this.externalConversationId = optionsConversationId;
+    } else if (!this.externalConversationId) {
+        this.externalConversationId = uuidv4();
     }
 
-    const conversationId = this.externalConversationId;
+    const conversationId = this.externalConversationId!;
     const requestId = uuidv4();
     const offlineThreadingId = `${uuidv4().replace(/-/g, '').substring(0, 8)}-${uuidv4().substring(0, 32)}`;
 
     try {
       const response = await this.sendViaWebSocket(conversationId, requestId, offlineThreadingId, message);
       this.conversationEstablished = true;
-      return response;
+      return {
+          ...response,
+          conversationId
+      };
     } catch (e: any) {
       return this.retry(message, options);
     }
@@ -592,7 +599,7 @@ export class MetaAI {
 
   async retry(
     message: string,
-    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; }
+    options: { stream?: boolean, attempts?: number, newConversation?: boolean; thinking?: boolean; conversationId?: string; }
   ): Promise<MetaAIResponse> {
     const { attempts = 0 } = options;
     if (attempts < MAX_RETRIES) {

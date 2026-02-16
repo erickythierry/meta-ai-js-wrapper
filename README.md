@@ -83,18 +83,24 @@ console.log(response);
 ```
 
 ### Follow conversations
+To follow a conversation, you MUST provide the `conversationId` returned in the previous response.
 
 ```typescript
 const meta = new MetaAI();
 
 let resp = await meta.prompt("what is 2 + 2?");
 console.log(resp.message); // 2 + 2 = 4
+const { conversationId } = resp;
 
-resp = await meta.prompt("what was my previous question?");
+resp = await meta.prompt("what was my previous question?", { conversationId });
 console.log(resp.message); // Your previous question was "what is 2 + 2?"
 ```
 
-To start a new conversation:
+### Explicit Session Management
+
+If `conversationId` is not provided, a NEW conversation is started automatically.
+
+To start a new conversation explicitly (even if you have an ID):
 
 ```typescript
 resp = await meta.prompt("New topic", { newConversation: true });
@@ -159,7 +165,8 @@ Content-Type: application/json
 
 {
   "message": "What is the weather in San Francisco today?",
-  "newConversation": false
+  "newConversation": false,
+  "conversationId": "optional-uuid-to-resume-context"
 }
 ```
 
@@ -170,6 +177,7 @@ Response:
     "success": true,
     "data": {
         "message": "The weather in San Francisco today is mostly clear...",
+        "conversationId": "12345678-1234-1234-1234-1234567890ab",
         "sources": [
             {
                 "link": "https://www.wolframalpha.com/...",
@@ -222,12 +230,17 @@ curl -X POST http://localhost:3000/api/prompt \
   -H "Content-Type: application/json" \
   -d '{"message": "What is 2 + 2?"}'
 
-# Continue conversation
+# Continue conversation (MUST provide conversationId)
 curl -X POST http://localhost:3000/api/prompt \
   -H "Content-Type: application/json" \
-  -d '{"message": "What was my previous question?"}'
+  -d '{"message": "Follow up question", "conversationId": "uuid-from-previous-response"}'
 
-# Start new conversation
+# Start new conversation (Implicitly by omitting conversationId)
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "New topic"}'
+
+# Start new conversation (Explicitly)
 curl -X POST http://localhost:3000/api/new-conversation
 ```
 
@@ -396,18 +409,24 @@ console.log(response);
 ```
 
 ### Acompanhar conversas
+Para acompanhar uma conversa, você DEVE fornecer o `conversationId` retornado na resposta anterior.
 
 ```typescript
 const meta = new MetaAI();
 
 let resp = await meta.prompt("quanto é 2 + 2?");
 console.log(resp.message); // 2 + 2 = 4
+const { conversationId } = resp;
 
-resp = await meta.prompt("qual era minha pergunta anterior?");
+resp = await meta.prompt("qual era minha pergunta anterior?", { conversationId });
 console.log(resp.message); // Sua pergunta anterior foi "quanto é 2 + 2?"
 ```
 
-Para iniciar uma nova conversa:
+### Gerenciamento Explícito de Sessão
+
+Se `conversationId` não for fornecido, uma NOVA conversa é iniciada automaticamente.
+
+Para iniciar uma nova conversa explicitamente:
 
 ```typescript
 resp = await meta.prompt("Novo tópico", { newConversation: true });
@@ -472,7 +491,8 @@ Content-Type: application/json
 
 {
   "message": "Qual é o clima em São Francisco hoje?",
-  "newConversation": false
+  "newConversation": false,
+  "conversationId": "uuid-opcional-para-retomar-contexto"
 }
 ```
 
@@ -483,6 +503,7 @@ Resposta:
     "success": true,
     "data": {
         "message": "O clima em São Francisco hoje é principalmente claro...",
+        "conversationId": "12345678-1234-1234-1234-1234567890ab",
         "sources": [
             {
                 "link": "https://www.wolframalpha.com/...",
@@ -535,12 +556,17 @@ curl -X POST http://localhost:3000/api/prompt \
   -H "Content-Type: application/json" \
   -d '{"message": "Quanto é 2 + 2?"}'
 
-# Continuar conversa
+# Continuar conversa (DEVE fornecer conversationId)
 curl -X POST http://localhost:3000/api/prompt \
   -H "Content-Type: application/json" \
-  -d '{"message": "Qual era minha pergunta anterior?"}'
+  -d '{"message": "Pergunta de acompanhamento", "conversationId": "uuid-da-resposta-anterior"}'
 
-# Iniciar nova conversa
+# Iniciar nova conversa (Implicitamente omitindo conversationId)
+curl -X POST http://localhost:3000/api/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Novo tópico"}'
+
+# Iniciar nova conversa (Explicitamente)
 curl -X POST http://localhost:3000/api/new-conversation
 ```
 

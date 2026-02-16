@@ -18,6 +18,7 @@ export interface MetaAIResponse {
     message: string;
     sources: Source[];
     media: Media[];
+    conversationId?: string;
 }
 
 export interface Cookies {

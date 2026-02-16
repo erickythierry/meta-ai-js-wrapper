@@ -48,7 +48,11 @@ app.get("/chat", (req: Request, res: Response) => {
 // Rota principal para enviar prompt
 app.post("/api/prompt", async (req: Request, res: Response) => {
     try {
-        const { message, newConversation = false } = req.body;
+        const { message, newConversation: reqNewConversation, conversationId } = req.body;
+
+        // Se conversationId não for fornecido, forçamos uma nova conversa
+        // Se for fornecido, respeitamos o flag newConversation ou padronizamos como false
+        const newConversation = conversationId ? (reqNewConversation || false) : true;
 
         if (!message || typeof message !== "string") {
             return res.status(400).json({
@@ -65,6 +69,7 @@ app.post("/api/prompt", async (req: Request, res: Response) => {
         const ai = await getMetaAIInstance();
         const response: MetaAIResponse = await ai.prompt(message, {
             newConversation,
+            conversationId
         });
 
         res.json({

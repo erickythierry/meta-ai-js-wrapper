@@ -25,10 +25,14 @@ Este workflow contém 2 nós:
 - Parâmetro `newConversation`: 
   - `false` (padrão) = mantém contexto da conversa
   - `true` = inicia nova conversa
+- Parâmetro `conversationId`:
+  - **Obrigatório para manter contexto**: Se não fornecido, uma NOVA conversa será iniciada automaticamente
+  - UUID de uma conversa anterior para retomar o contexto
 
 ### 2. **Extrair Resposta** (Set)
 - Extrai os dados da resposta:
   - `response`: Texto da resposta da IA
+  - `conversationId`: ID da conversa atual (útil para salvar e retomar depois)
   - `sources`: Array com fontes/links usados
   - `media`: Array com mídias geradas
   - `original_input`: Seu texto original
