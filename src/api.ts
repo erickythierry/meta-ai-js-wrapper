@@ -23,11 +23,6 @@ let metaAI: MetaAI | null = null;
 // Inicializa o MetaAI na primeira requisição
 async function getMetaAIInstance(): Promise<MetaAI> {
     if (!metaAI) {
-        // Você pode passar credenciais via variáveis de ambiente, se necessário
-        // const fbEmail = process.env.META_FB_EMAIL;
-        // const fbPassword = process.env.META_FB_PASSWORD;
-        // metaAI = new MetaAI({ fbEmail, fbPassword });
-
         metaAI = new MetaAI();
         await metaAI.init();
     }
