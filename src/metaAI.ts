@@ -604,7 +604,13 @@ export class MetaAI {
     const { attempts = 0 } = options;
     if (attempts < MAX_RETRIES) {
       console.warn(`Retrying... Attempt ${attempts + 1}/${MAX_RETRIES}`);
-      if (attempts > 0) this.accessToken = null;
+      
+      this.accessToken = null; // Always clear token to force refresh
+      if (attempts > 0) {
+          this.cookies = null; // Clear cookies if simple token refresh didn't work
+          this.jar.removeAllCookiesSync();
+      }
+
       await new Promise(resolve => setTimeout(resolve, 2000));
       return this.prompt(message, { ...options, attempts: attempts + 1 });
     }
